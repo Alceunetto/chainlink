@@ -11,9 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/coreos/pkg/health"
-	"github.com/smartcontractkit/chainlink/core/services/vrf"
-
 	"github.com/pkg/errors"
 	"github.com/smartcontractkit/chainlink/core/service"
 	"github.com/smartcontractkit/chainlink/core/services/cron"
@@ -22,6 +19,7 @@ import (
 	"github.com/smartcontractkit/chainlink/core/services/keeper"
 	"github.com/smartcontractkit/chainlink/core/services/periodicbackup"
 	"github.com/smartcontractkit/chainlink/core/services/telemetry"
+	"github.com/smartcontractkit/chainlink/core/services/vrf"
 	"github.com/smartcontractkit/chainlink/core/services/webhook"
 	"gorm.io/gorm"
 
@@ -33,6 +31,7 @@ import (
 	"github.com/smartcontractkit/chainlink/core/services/directrequest"
 	"github.com/smartcontractkit/chainlink/core/services/eth"
 	"github.com/smartcontractkit/chainlink/core/services/fluxmonitor"
+	"github.com/smartcontractkit/chainlink/core/services/health"
 	"github.com/smartcontractkit/chainlink/core/services/job"
 	"github.com/smartcontractkit/chainlink/core/services/log"
 	"github.com/smartcontractkit/chainlink/core/services/offchainreporting"
@@ -79,6 +78,7 @@ type Application interface {
 	Start() error
 	Stop() error
 	GetLogger() *logger.Logger
+	GetHealthChecker() health.Checker
 	GetStore() *strpkg.Store
 	GetOCRKeyStore() *offchainreporting.KeyStore // TODO: this should be replaced with a generic GetKeystore()
 	GetStatsPusher() synchronization.StatsPusher
@@ -163,6 +163,8 @@ func NewApplication(config *orm.Config, ethClient eth.Client, advisoryLocker pos
 	}
 
 	setupConfig(config, store)
+
+	healthChecker := health.NewChecker()
 
 	explorerClient := synchronization.ExplorerClient(&synchronization.NoopExplorerClient{})
 	statsPusher := synchronization.StatsPusher(&synchronization.NoopStatsPusher{})
@@ -340,6 +342,7 @@ func NewApplication(config *orm.Config, ethClient eth.Client, advisoryLocker pos
 		shutdownSignal:           shutdownSignal,
 		balanceMonitor:           balanceMonitor,
 		explorerClient:           explorerClient,
+		HealthChecker:            healthChecker,
 		logger:                   globalLogger,
 		// NOTE: Can keep things clean by putting more things in subservices
 		// instead of manually start/closing
@@ -347,7 +350,9 @@ func NewApplication(config *orm.Config, ethClient eth.Client, advisoryLocker pos
 	}
 
 	for _, service := range app.subservices {
-		healthChecker.Register(reflect.TypeOf(service).Name(), service)
+		if err := app.HealthChecker.Register(reflect.TypeOf(service).String(), service); err != nil {
+			return nil, err
+		}
 	}
 
 	headTrackables = append(
@@ -493,6 +498,12 @@ func (app *ChainlinkApplication) Start() error {
 		return err
 	}
 
+	// Start HealthChecker last, so that the other services had the chance to
+	// start enough to immediately pass the readiness check.
+	if err := app.HealthChecker.Start(); err != nil {
+		return err
+	}
+
 	app.started = true
 	return nil
 }
@@ -567,6 +578,8 @@ func (app *ChainlinkApplication) stop() error {
 		merr = multierr.Append(merr, app.SessionReaper.Stop())
 		logger.Debug("Closing Store...")
 		merr = multierr.Append(merr, app.Store.Close())
+		logger.Debug("Closing HealthChecker...")
+		merr = multierr.Append(merr, app.HealthChecker.Close())
 
 		logger.Info("Exited all services")
 
@@ -586,6 +599,10 @@ func (app *ChainlinkApplication) GetOCRKeyStore() *offchainreporting.KeyStore {
 
 func (app *ChainlinkApplication) GetLogger() *logger.Logger {
 	return app.logger
+}
+
+func (app *ChainlinkApplication) GetHealthChecker() health.Checker {
+	return app.HealthChecker
 }
 
 func (app *ChainlinkApplication) GetJobORM() job.ORM {

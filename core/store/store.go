@@ -122,6 +122,14 @@ func (s *Store) Close() error {
 	return err
 }
 
+func (s *Store) Ready() error {
+	return nil
+}
+
+func (s *Store) Healthy() error {
+	return nil
+}
+
 // Unscoped returns a shallow copy of the store, with an unscoped ORM allowing
 // one to work with soft deleted records.
 func (s *Store) Unscoped() *Store {

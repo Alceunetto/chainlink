@@ -303,7 +303,7 @@ func NewPipelineORM(t testing.TB, config *TestConfig, db *gorm.DB) (pipeline.ORM
 	eventBroadcaster := postgres.NewEventBroadcaster(config.DatabaseURL(), 0, 0)
 	eventBroadcaster.Start()
 	return pipeline.NewORM(db, config, eventBroadcaster), eventBroadcaster, func() {
-		eventBroadcaster.Stop()
+		eventBroadcaster.Close()
 	}
 }
 
@@ -312,7 +312,7 @@ func NewEthBroadcaster(t testing.TB, store *strpkg.Store, config *TestConfig) (b
 	eventBroadcaster := postgres.NewEventBroadcaster(config.DatabaseURL(), 0, 0)
 	eventBroadcaster.Start()
 	return bulletprooftxmanager.NewEthBroadcaster(store, config, eventBroadcaster), func() {
-		eventBroadcaster.Stop()
+		eventBroadcaster.Close()
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/smartcontractkit/chainlink/core/logger"
+	"github.com/smartcontractkit/chainlink/core/service"
 	"github.com/smartcontractkit/chainlink/core/store"
 	"github.com/smartcontractkit/chainlink/core/store/models"
 	"github.com/smartcontractkit/chainlink/core/utils"
@@ -33,7 +34,7 @@ type JobSubscriber interface {
 	AddJob(job models.JobSpec, bn *models.Head) error
 	RemoveJob(ID models.JobID) error
 	Jobs() []models.JobSpec
-	Stop() error
+	service.Service
 }
 
 // jobSubscriber implementation
@@ -86,9 +87,13 @@ func NewJobSubscriber(store *store.Store, runManager RunManager) JobSubscriber {
 	return js
 }
 
+func (js *jobSubscriber) Start() error {
+	return nil
+}
+
 // Called on node shutdown, unsubscribe from everything
 // and remove the subscriptions.
-func (js *jobSubscriber) Stop() error {
+func (js *jobSubscriber) Close() error {
 	js.jobsMutex.Lock()
 	defer js.jobsMutex.Unlock()
 
@@ -97,6 +102,14 @@ func (js *jobSubscriber) Stop() error {
 	}
 	js.jobSubscriptions = map[string]JobSubscription{}
 	return js.jobResumer.Stop()
+}
+
+func (js *jobSubscriber) Ready() error {
+	return nil
+}
+
+func (js *jobSubscriber) Healthy() error {
+	return nil
 }
 
 func (js *jobSubscriber) alreadySubscribed(jobID models.JobID) bool {
@@ -211,4 +224,7 @@ func (NullJobSubscriber) RemoveJob(ID models.JobID) error {
 	return errors.New("NullJobSubscriber#RemoveJob should never be called")
 }
 func (NullJobSubscriber) Jobs() (j []models.JobSpec) { return }
-func (NullJobSubscriber) Stop() error                { return nil }
+func (NullJobSubscriber) Start() error               { return nil }
+func (NullJobSubscriber) Close() error               { return nil }
+func (NullJobSubscriber) Ready() error               { return nil }
+func (NullJobSubscriber) Healthy() error             { return nil }

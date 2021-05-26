@@ -545,7 +545,7 @@ func (app *ChainlinkApplication) stop() error {
 		// Stop services in the reverse order from which they were started
 
 		logger.Debug("Stopping Scheduler...")
-		app.Scheduler.Stop()
+		merr = multierr.Append(merr, app.Scheduler.Stop())
 
 		logger.Debug("Stopping HeadTracker...")
 		merr = multierr.Append(merr, app.HeadTracker.Stop())
@@ -556,8 +556,6 @@ func (app *ChainlinkApplication) stop() error {
 			merr = multierr.Append(merr, service.Close())
 		}
 
-		logger.Debug("Stopping Scheduler...")
-		app.Scheduler.Stop()
 		logger.Debug("Stopping balanceMonitor...")
 		merr = multierr.Append(merr, app.balanceMonitor.Stop())
 		logger.Debug("Stopping JobSubscriber...")

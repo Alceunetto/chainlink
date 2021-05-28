@@ -23,7 +23,7 @@ func TestWebhookDelegate(t *testing.T) {
 			WebhookSpec: &job.WebhookSpec{
 				OnChainJobSpecID: models.NewJobID(),
 			},
-			Pipeline:     *pipeline.NewTaskDAG(),
+			// Pipeline:     *pipeline.NewTaskDAG(),
 			PipelineSpec: &pipeline.Spec{},
 		}
 

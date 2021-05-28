@@ -4,13 +4,10 @@ import (
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 	"github.com/smartcontractkit/chainlink/core/services/job"
-	"github.com/smartcontractkit/chainlink/core/services/pipeline"
 )
 
 func ValidatedKeeperSpec(tomlString string) (job.Job, error) {
-	var j = job.Job{
-		Pipeline: *pipeline.NewTaskDAG(),
-	}
+	var j = job.Job{}
 	var spec job.KeeperSpec
 	tree, err := toml.Load(tomlString)
 	if err != nil {

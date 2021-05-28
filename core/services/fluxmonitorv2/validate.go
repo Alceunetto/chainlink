@@ -6,14 +6,11 @@ import (
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 	"github.com/smartcontractkit/chainlink/core/services/job"
-	"github.com/smartcontractkit/chainlink/core/services/pipeline"
 	coreorm "github.com/smartcontractkit/chainlink/core/store/orm"
 )
 
 func ValidatedFluxMonitorSpec(config *coreorm.Config, ts string) (job.Job, error) {
-	var jb = job.Job{
-		Pipeline: *pipeline.NewTaskDAG(),
-	}
+	var jb = job.Job{}
 	var spec job.FluxMonitorSpec
 	tree, err := toml.Load(ts)
 	if err != nil {

@@ -6,11 +6,10 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/smartcontractkit/chainlink/core/services/job"
-	"github.com/smartcontractkit/chainlink/core/services/pipeline"
 )
 
 func ValidateCronSpec(tomlString string) (job.Job, error) {
-	var jb = job.Job{Pipeline: *pipeline.NewTaskDAG()}
+	var jb = job.Job{}
 
 	tree, err := toml.Load(tomlString)
 	if err != nil {

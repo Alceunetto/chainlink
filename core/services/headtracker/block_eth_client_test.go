@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/pkg/errors"
 	"github.com/smartcontractkit/chainlink/core/internal/cltest"
 	"github.com/smartcontractkit/chainlink/core/services/eth/mocks"
 	"github.com/smartcontractkit/chainlink/core/services/headtracker"
@@ -80,6 +81,38 @@ func TestBlockEthClient_BatchGetBlocks(t *testing.T) {
 	})).Return(nil).Run(func(args mock.Arguments) {
 		elems := args.Get(1).([]rpc.BatchElem)
 		elems[0].Result = &block43
+	})
+
+	blockClient := headtracker.NewBlockEthClientImpl(ethClient, logger, 2)
+
+	blocks, err := blockClient.FetchBlocksByNumbers(context.Background(), []int64{41, 42, 43})
+	require.NoError(t, err)
+
+	assert.Len(t, blocks, 3)
+	assert.Equal(t, int64(41), blocks[41].Number)
+	assert.Equal(t, int64(42), blocks[42].Number)
+	assert.Equal(t, int64(43), blocks[43].Number)
+}
+
+func TestBlockEthClient_BatchReturnsFewerBlcoksOnError(t *testing.T) {
+	store, cleanup := cltest.NewStore(t)
+	defer cleanup()
+	logger := store.Config.CreateProductionLogger()
+
+	block40 := cltest.HtBlock(40, common.Hash{})
+	block41 := cltest.HtBlock(41, block40.Hash)
+	block42 := cltest.HtBlock(42, block41.Hash)
+
+	ethClient := new(mocks.Client)
+
+	ethClient.On("BatchCallContext", mock.Anything, mock.MatchedBy(func(b []rpc.BatchElem) bool {
+		return len(b) == 2 &&
+			b[0].Method == "eth_getBlockByNumber" && b[0].Args[0] == "0x29" && b[0].Args[1] == true &&
+			b[1].Method == "eth_getBlockByNumber" && b[1].Args[0] == "0x2a" && b[1].Args[1] == true
+	})).Return(nil).Run(func(args mock.Arguments) {
+		elems := args.Get(1).([]rpc.BatchElem)
+		elems[0].Result = &block42
+		elems[1].Error = errors.New("something exploded")
 	})
 
 	blockClient := headtracker.NewBlockEthClientImpl(ethClient, logger, 2)

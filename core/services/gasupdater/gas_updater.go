@@ -237,6 +237,9 @@ func (gu *gasUpdater) FetchBlocks(ctx context.Context, head models.Head) error {
 		lowestBlockToFetch = 0
 	}
 
+	logger.Warnf("=============== lowestBlockToFetch: %v", lowestBlockToFetch)
+	logger.Warnf("=============== highestBlockToFetch: %v", highestBlockToFetch)
+
 	newBlockHistory, err := gu.blockFetcher.BlockRange(ctx, lowestBlockToFetch, highestBlockToFetch)
 	if err != nil {
 		return errors.Wrap(err, "GasUpdater: BlockRange call failed")

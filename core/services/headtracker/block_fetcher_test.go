@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/pkg/errors"
 	"github.com/smartcontractkit/chainlink/core/internal/cltest"
 	"github.com/smartcontractkit/chainlink/core/services/eth/mocks"
 	"github.com/smartcontractkit/chainlink/core/services/headtracker"
@@ -32,7 +31,7 @@ func TestBlockFetcher_GetBlockRange(t *testing.T) {
 
 		blockClient := NewFakeBlockEthClient([]headtracker.Block{block40, block41, block42})
 
-		blockFetcher := headtracker.NewBlockFetcher(ethClient, config, logger, blockClient)
+		blockFetcher := headtracker.NewBlockFetcher(config, logger, blockClient)
 
 		//ethClient.On("BatchCallContext", mock.Anything, mock.MatchedBy(func(b []rpc.BatchElem) bool {
 		//	return len(b) == 2 &&
@@ -78,9 +77,9 @@ func TestBlockFetcher_ConstructsChain(t *testing.T) {
 	block42 := cltest.HtBlock(42, block41.Hash)
 	h := cltest.HeadFromHtBlock(&block42)
 
-	blockClient := NewFakeBlockEthClient([]headtracker.Block{block40, block41, block42})
+	blockClient := headtracker.NewFakeBlockEthClient([]headtracker.Block{block40, block41, block42})
 	ethClient := new(mocks.Client)
-	blockFetcher := headtracker.NewBlockFetcher(ethClient, config, logger, blockClient)
+	blockFetcher := headtracker.NewBlockFetcher(config, logger, blockClient)
 
 	head, err := blockFetcher.Chain(context.Background(), *h)
 	require.NoError(t, err)
@@ -111,44 +110,3 @@ func TestBlockFetcher_ConstructsChain(t *testing.T) {
 //		//})).Return(block, nil)
 //	}
 //}
-
-type FakeBlockEthClient struct {
-	blocks []headtracker.Block
-}
-
-func NewFakeBlockEthClient(blocks []headtracker.Block) *FakeBlockEthClient {
-	return &FakeBlockEthClient{
-		blocks: blocks,
-	}
-}
-
-func (bc *FakeBlockEthClient) BlockByNumber(ctx context.Context, number int64) (*headtracker.Block, error) {
-	for _, block := range bc.blocks {
-		if block.Number == number {
-			return &block, nil
-		}
-	}
-	return nil, errors.Errorf("not found: %v", number)
-}
-
-func (bc *FakeBlockEthClient) FastBlockByHash(ctx context.Context, hash common.Hash) (*headtracker.Block, error) {
-	for _, block := range bc.blocks {
-		if block.Hash == hash {
-			return &block, nil
-		}
-	}
-	return nil, errors.Errorf("not found: %v", hash)
-}
-
-func (bc *FakeBlockEthClient) FetchBlocksByNumbers(ctx context.Context, numbers []int64) (map[int64]headtracker.Block, error) {
-
-	mapp := make(map[int64]headtracker.Block, 0)
-	for _, block := range bc.blocks {
-		for _, number := range numbers {
-			if block.Number == number {
-				mapp[number] = block
-			}
-		}
-	}
-	return mapp, nil
-}

@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/services/eth"
+	"github.com/smartcontractkit/chainlink/core/store/models"
 )
 
 //go:generate mockery --name BlockEthClient --output ./mocks/ --case=underscore
@@ -17,6 +18,7 @@ type BlockEthClient interface {
 	BlockByNumber(ctx context.Context, number int64) (*Block, error)
 	FastBlockByHash(ctx context.Context, hash common.Hash) (*Block, error)
 	FetchBlocksByNumbers(ctx context.Context, numbers []int64) (map[int64]Block, error)
+	FetchLatestHead(ctx context.Context) (*models.Head, error)
 }
 
 type BlockEthClientImpl struct {
@@ -116,4 +118,61 @@ func (bc *BlockEthClientImpl) batchFetch(ctx context.Context, reqs []rpc.BatchEl
 		}
 	}
 	return nil
+}
+
+func (bc *BlockEthClientImpl) FetchLatestHead(ctx context.Context) (*models.Head, error) {
+	return bc.ethClient.HeaderByNumber(ctx, nil)
+}
+
+type FakeBlockEthClient struct {
+	blocks []Block
+}
+
+func NewFakeBlockEthClient(blocks []Block) *FakeBlockEthClient {
+	return &FakeBlockEthClient{
+		blocks: blocks,
+	}
+}
+
+func (bc *FakeBlockEthClient) SetBlocks(blocks []Block) {
+	bc.blocks = blocks
+}
+
+func (bc *FakeBlockEthClient) BlockByNumber(ctx context.Context, number int64) (*Block, error) {
+	for _, block := range bc.blocks {
+		if block.Number == number {
+			return &block, nil
+		}
+	}
+	return nil, errors.Errorf("not found: %v", number)
+}
+
+func (bc *FakeBlockEthClient) FastBlockByHash(ctx context.Context, hash common.Hash) (*Block, error) {
+	for _, block := range bc.blocks {
+		if block.Hash == hash {
+			return &block, nil
+		}
+	}
+	return nil, errors.Errorf("not found: %v", hash)
+}
+
+func (bc *FakeBlockEthClient) FetchBlocksByNumbers(ctx context.Context, numbers []int64) (map[int64]Block, error) {
+
+	mapp := make(map[int64]Block, 0)
+	for _, block := range bc.blocks {
+		for _, number := range numbers {
+			if block.Number == number {
+				mapp[number] = block
+			}
+		}
+	}
+	return mapp, nil
+}
+
+func (bc *FakeBlockEthClient) FetchLatestHead(ctx context.Context) (*models.Head, error) {
+	if len(bc.blocks) == 0 {
+		return nil, errors.Errorf("no head found")
+	}
+	head := headFromBlock(bc.blocks[len(bc.blocks)-1])
+	return &head, nil
 }

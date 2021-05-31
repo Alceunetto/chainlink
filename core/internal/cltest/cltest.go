@@ -1447,6 +1447,20 @@ func HtBlock(number int, parentHash common.Hash) headtracker.Block {
 	return block
 }
 
+func NewBlock(number int64) headtracker.Block {
+	return headtracker.Block{
+		Number: number,
+		Hash:   NewHash(),
+	}
+}
+func NewBlockWithTransactions(number int64, transactions []headtracker.Transaction) headtracker.Block {
+	return headtracker.Block{
+		Number:       number,
+		Hash:         NewHash(),
+		Transactions: transactions,
+	}
+}
+
 func HeadFromBlock(block *types.Block) *models.Head {
 	h := &models.Head{Hash: block.Hash(), Number: block.Number().Int64(), ParentHash: block.ParentHash()}
 	return h

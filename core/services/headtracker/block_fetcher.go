@@ -2,7 +2,6 @@ package headtracker
 
 import (
 	"context"
-	"math/big"
 	"sort"
 	"sync"
 	"time"
@@ -16,69 +15,58 @@ import (
 	"github.com/smartcontractkit/chainlink/core/utils"
 )
 
-// BlockFetcherConfig defines the interface for the supplied config
+//go:generate mockery --name BlockFetcherInterface --output ./mocks/ --case=underscore
+type (
+	BlockFetcherInterface interface {
+		FetchLatestHead(ctx context.Context) (*models.Head, error)
+		BlockRange(ctx context.Context, fromBlock int64, toBlock int64) ([]Block, error)
+		SyncLatestHead(ctx context.Context, head models.Head) error
+		Chain(ctx context.Context, latestHead models.Head) (models.Head, error)
+	}
+
+	BlockFetcher struct {
+		ethClient eth.Client
+		logger    *logger.Logger
+		config    BlockFetcherConfig
+
+		blockEthClient BlockEthClient
+		recent         map[common.Hash]*Block
+		latestBlockNum int64
+
+		notifications chan struct{}
+
+		mut        sync.Mutex
+		syncingMut sync.Mutex
+	}
+)
+
+//go:generate mockery --name BlockFetcherConfig --output ./mocks/ --case=underscore
 type BlockFetcherConfig interface {
 	BlockFetcherBatchSize() uint32
-
 	EthFinalityDepth() uint
 	EthHeadTrackerHistoryDepth() uint
 	BlockBackfillDepth() uint64
-	GasUpdaterBlockHistorySize() uint16
-	GasUpdaterBlockDelay() uint16
-	GasUpdaterBatchSize() uint32
 }
 
-//go:generate mockery --name BlockFetcherInterface --output ./mocks/ --case=underscore
-type BlockFetcherInterface interface {
-	FetchLatestHead(ctx context.Context) (*models.Head, error)
-	BlockRange(ctx context.Context, fromBlock int64, toBlock int64) ([]Block, error)
-	SyncLatestHead(ctx context.Context, head models.Head) error
-	Chain(ctx context.Context, latestHead models.Head) (models.Head, error)
-}
-
-type BlockFetcher struct {
-	ethClient eth.Client
-	logger    *logger.Logger
-	config    BlockFetcherConfig
-
-	blockEthClient BlockEthClient
-	recent         map[common.Hash]*Block
-	latestBlockNum int64
-
-	notifications chan struct{}
-
-	mut        sync.Mutex
-	syncingMut sync.Mutex
-}
-
-type BlockDownload struct {
-	StartedAt time.Time
-
-	Number int64
-
-	// may be nil
-	Hash *common.Hash
-
-	// may be nil
-	Head *models.Head
-}
+//type BlockDownload struct {
+//	StartedAt time.Time
+//
+//	Number int64
+//
+//	// may be nil
+//	Hash *common.Hash
+//
+//	// may be nil
+//	Head *models.Head
+//}
 
 func (bf *BlockFetcher) BlockCache() []*Block {
 	return bf.RecentSorted()
 }
 
-func NewBlockFetcher(ethClient eth.Client, config BlockFetcherConfig, logger *logger.Logger, blockEthClient BlockEthClient) *BlockFetcher {
-
-	if uint(config.GasUpdaterBlockHistorySize()+config.GasUpdaterBlockDelay()) > config.EthHeadTrackerHistoryDepth() {
-		panic("") //TODO:
-	}
-
-	if config.BlockBackfillDepth() > uint64(config.EthHeadTrackerHistoryDepth()) {
-		panic("") //TODO:
-	}
+func NewBlockFetcher(config BlockFetcherConfig, logger *logger.Logger, blockEthClient BlockEthClient) *BlockFetcher {
 
 	return &BlockFetcher{
-		ethClient:      ethClient,
 		logger:         logger,
 		config:         config,
 		recent:         make(map[common.Hash]*Block),
@@ -97,7 +85,7 @@ func (bf *BlockFetcher) Backfill(ctx context.Context, latestHead models.Head) {
 
 // FetchLatestHead - Fetches the latest head from the blockchain, regardless of local cache
 func (bf *BlockFetcher) FetchLatestHead(ctx context.Context) (*models.Head, error) {
-	return bf.ethClient.HeaderByNumber(ctx, nil)
+	return bf.blockEthClient.FetchLatestHead(ctx)
 }
 
 // BlockRange - Returns a range of blocks, either from local memory or fetched
@@ -381,7 +369,7 @@ func (bf *BlockFetcher) syncLatestHead(ctx context.Context, head models.Head) (m
 
 func (bf *BlockFetcher) fetchAndSaveBlock(ctx context.Context, hash common.Hash) (Block, error) {
 	bf.logger.Debugf("Fetching block by hash: %v", hash)
-	ethBlockPtr, err := bf.ethClient.FastBlockByHash(ctx, hash)
+	blockPtr, err := bf.blockEthClient.FastBlockByHash(ctx, hash)
 	if ctx.Err() != nil {
 		return Block{}, nil
 	}
@@ -389,13 +377,10 @@ func (bf *BlockFetcher) fetchAndSaveBlock(ctx context.Context, hash common.Hash)
 		return Block{}, errors.Wrap(err, "FastBlockByHash failed")
 	}
 
-	var ethBlock = *ethBlockPtr
-	var block = fromEthBlock(ethBlock)
-
 	bf.mut.Lock()
-	bf.recent[block.Hash] = &block
+	bf.recent[blockPtr.Hash] = blockPtr
 	bf.mut.Unlock()
-	return block, nil
+	return *blockPtr, nil
 }
 
 func (bf *BlockFetcher) sequentialConstructChain(ctx context.Context, block Block, from int64) (models.Head, error) {
@@ -421,7 +406,7 @@ func (bf *BlockFetcher) sequentialConstructChain(ctx context.Context, block Bloc
 			bf.logger.Debugf("Fetching BlockByNumber: %v, as existing block was not found by %v", i, currentHead.ParentHash)
 
 			//TODO: perhaps implement FastBlockByNumber
-			ethBlockPtr, err := bf.ethClient.BlockByNumber(ctx, big.NewInt(i))
+			blockPtr, err := bf.blockEthClient.BlockByNumber(ctx, i)
 			fetched++
 			if ctx.Err() != nil {
 				break
@@ -429,10 +414,8 @@ func (bf *BlockFetcher) sequentialConstructChain(ctx context.Context, block Bloc
 				return models.Head{}, errors.Wrap(err, "BlockByNumber failed")
 			}
 
-			block = fromEthBlock(*ethBlockPtr)
-
 			bf.mut.Lock()
-			bf.recent[block.Hash] = &block
+			bf.recent[block.Hash] = blockPtr
 			bf.mut.Unlock()
 		}
 

@@ -166,9 +166,17 @@ func NewApplication(config *orm.Config, ethClient eth.Client, advisoryLocker pos
 	}
 
 	blockEthClient := headtracker.NewBlockEthClientImpl(store.EthClient, logger.Default, store.Config.BlockFetcherBatchSize())
-	blockFetcher := headtracker.NewBlockFetcher(store.EthClient, store.Config, logger.Default, blockEthClient)
+	blockFetcher := headtracker.NewBlockFetcher(store.Config, logger.Default, blockEthClient)
+
+	if config.BlockBackfillDepth() > uint64(config.EthHeadTrackerHistoryDepth()) {
+		logger.Fatal("Configuration value of EthHeadTrackerHistoryDepth must be larger than BlockBackfillDepth")
+	}
 
 	if store.Config.GasUpdaterEnabled() {
+		if uint(config.GasUpdaterBlockHistorySize()+config.GasUpdaterBlockDelay()) > config.EthHeadTrackerHistoryDepth() {
+			logger.Fatal("Configuration value of EthHeadTrackerHistoryDepth must be larger than GasUpdaterBlockHistorySize plus GasUpdaterBlockDelay")
+		}
+
 		logger.Debugw("GasUpdater: dynamic gas updates are enabled", "ethGasPriceDefault", store.Config.EthGasPriceDefault())
 		gasUpdater := gasupdater.NewGasUpdater(blockFetcher, store.Config)
 		headBroadcaster.SubscribeUntilClose(gasUpdater)

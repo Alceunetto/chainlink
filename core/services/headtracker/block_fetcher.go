@@ -2,7 +2,6 @@ package headtracker
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"sort"
 	"sync"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/pkg/errors"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/services/eth"
@@ -43,6 +41,7 @@ type BlockFetcher struct {
 	logger    *logger.Logger
 	config    BlockFetcherConfig
 
+	blockEthClient BlockEthClient
 	recent         map[common.Hash]*Block
 	latestBlockNum int64
 
@@ -68,27 +67,22 @@ func (bf *BlockFetcher) BlockCache() []*Block {
 	return bf.RecentSorted()
 }
 
-func NewBlockFetcher(ethClient eth.Client, config BlockFetcherConfig, logger *logger.Logger) *BlockFetcher {
+func NewBlockFetcher(ethClient eth.Client, config BlockFetcherConfig, logger *logger.Logger, blockEthClient BlockEthClient) *BlockFetcher {
 
 	if uint(config.GasUpdaterBlockHistorySize()+config.GasUpdaterBlockDelay()) > config.EthHeadTrackerHistoryDepth() {
 		panic("") //TODO:
 	}
-
-	// rename BlockBackfillDepth to LogBackfillDepth ?
-	// use EthHeadTrackerHistoryDepth
-	//if config.EthHeadTrackerHistoryDepth() > uint(config.BlockFetcherHistorySize()) {
-	//	panic("") //TODO:
-	//}
 
 	if config.BlockBackfillDepth() > uint64(config.EthHeadTrackerHistoryDepth()) {
 		panic("") //TODO:
 	}
 
 	return &BlockFetcher{
-		ethClient: ethClient,
-		logger:    logger,
-		config:    config,
-		recent:    make(map[common.Hash]*Block),
+		ethClient:      ethClient,
+		logger:         logger,
+		config:         config,
+		recent:         make(map[common.Hash]*Block),
+		blockEthClient: blockEthClient,
 	}
 }
 
@@ -258,7 +252,7 @@ func (bf *BlockFetcher) downloadRange(ctx context.Context, fromBlock int64, toBl
 	}
 
 	if len(blockNumsToFetch) > 0 {
-		blocksFetched, err := bf.fetchBlocksByNumbers(ctx, blockNumsToFetch)
+		blocksFetched, err := bf.blockEthClient.FetchBlocksByNumbers(ctx, blockNumsToFetch)
 		if err != nil {
 			bf.logger.Errorw("BlockFetcher#BlockRange error while fetching missing blocks", "err", err, "fromBlock", fromBlock, "toBlock", toBlock)
 			return err
@@ -312,73 +306,6 @@ func (bf *BlockFetcher) findBlockByHash(hash common.Hash) *Block {
 	block, ok := bf.recent[hash]
 	if ok {
 		return block
-	}
-	return nil
-}
-
-func (bf *BlockFetcher) fetchBlocksByNumbers(ctx context.Context, numbers []int64) (map[int64]Block, error) {
-	var reqs []rpc.BatchElem
-	for _, number := range numbers {
-		req := rpc.BatchElem{
-			Method: "eth_getBlockByNumber",
-			Args:   []interface{}{Int64ToHex(number), true},
-			Result: &Block{},
-		}
-		reqs = append(reqs, req)
-	}
-
-	bf.logger.Debugw(fmt.Sprintf("BlockFetcher: fetching %v blocks", len(reqs)), "n", len(reqs))
-	if err := bf.batchFetch(ctx, reqs); err != nil {
-		return nil, err
-	}
-
-	blocks := make(map[int64]Block)
-	for i, req := range reqs {
-		result, err := req.Result, req.Error
-		if err != nil {
-			bf.logger.Warnw("BlockFetcher#fetchBlocksByNumbers error while fetching block", "err", err, "blockNum", numbers[i])
-			continue
-		}
-
-		b, is := result.(*Block)
-		if !is {
-			return nil, errors.Errorf("expected result to be a %T, got %T", &Block{}, result)
-		}
-		if b == nil {
-			//TODO: can this happen on "Fetching it too early results in an empty block." ?
-			bf.logger.Warnw("BlockFetcher#fetchBlocksByNumbers got nil block", "blockNum", numbers[i], "index", i)
-			continue
-		}
-		if b.Hash == (common.Hash{}) {
-			bf.logger.Warnw("BlockFetcher#fetchBlocksByNumbers block was missing hash", "block", b, "blockNum", numbers[i], "erroredBlockNum", b.Number)
-			continue
-		}
-
-		blocks[b.Number] = *b
-	}
-	return blocks, nil
-}
-
-func (bf *BlockFetcher) batchFetch(ctx context.Context, reqs []rpc.BatchElem) error {
-	batchSize := int(bf.config.BlockFetcherBatchSize())
-
-	if batchSize == 0 {
-		batchSize = len(reqs)
-	}
-	for i := 0; i < len(reqs); i += batchSize {
-		j := i + batchSize
-		if j > len(reqs) {
-			j = len(reqs)
-		}
-
-		logger.Debugw(fmt.Sprintf("BlockFetcher: batch fetching blocks %v thru %v", HexToInt64(reqs[i].Args[0]), HexToInt64(reqs[j-1].Args[0])))
-
-		err := bf.ethClient.BatchCallContext(ctx, reqs[i:j])
-		if ctx.Err() != nil {
-			break
-		} else if err != nil {
-			return errors.Wrap(err, "BlockFetcher#fetchBlocks error fetching blocks with BatchCallContext")
-		}
 	}
 	return nil
 }
@@ -440,8 +367,11 @@ func (bf *BlockFetcher) syncLatestHead(ctx context.Context, head models.Head) (m
 		return bf.sequentialConstructChain(ctx, block, from)
 	} else {
 		// we don't have the previous block or there was a re-org
-
+		bf.logger.Debugf("Getting a range of blocks: %v to %v", from, head.Number)
 		blocks, err := bf.GetBlockRange(ctx, from, head.Number)
+		sort.Slice(blocks, func(i, j int) bool {
+			return blocks[i].Number < blocks[j].Number
+		})
 		if err != nil {
 			return models.Head{}, errors.Wrap(err, "BlockByNumber failed")
 		}
@@ -486,7 +416,7 @@ func (bf *BlockFetcher) sequentialConstructChain(ctx context.Context, block Bloc
 		var existingBlock = bf.findBlockByHash(currentHead.ParentHash)
 		if existingBlock != nil {
 			block = *existingBlock
-			bf.logger.Debugf("Found block: %v - %v", block.Number, block.Hash)
+			bf.logger.Debugf("Found block in cache: %v - %v", block.Number, block.Hash)
 		} else {
 			bf.logger.Debugf("Fetching BlockByNumber: %v, as existing block was not found by %v", i, currentHead.ParentHash)
 

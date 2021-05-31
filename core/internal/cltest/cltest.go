@@ -1439,8 +1439,21 @@ func Block(number int, parentHash common.Hash) *types.Block {
 	return block
 }
 
+func HtBlock(number int, parentHash common.Hash) headtracker.Block {
+	var block headtracker.Block
+	block.Number = int64(number)
+	block.Hash = NewHash()
+	block.ParentHash = parentHash
+	return block
+}
+
 func HeadFromBlock(block *types.Block) *models.Head {
 	h := &models.Head{Hash: block.Hash(), Number: block.Number().Int64(), ParentHash: block.ParentHash()}
+	return h
+}
+
+func HeadFromHtBlock(block *headtracker.Block) *models.Head {
+	h := &models.Head{Hash: block.Hash, Number: block.Number, ParentHash: block.ParentHash}
 	return h
 }
 

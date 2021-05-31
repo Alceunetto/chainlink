@@ -2,22 +2,18 @@ package headtracker_test
 
 import (
 	"context"
-	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/pkg/errors"
 	"github.com/smartcontractkit/chainlink/core/internal/cltest"
-	"github.com/smartcontractkit/chainlink/core/internal/utils"
 	"github.com/smartcontractkit/chainlink/core/services/eth/mocks"
 	"github.com/smartcontractkit/chainlink/core/services/headtracker"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-func TestBlockFetcher_Start(t *testing.T) {
+func TestBlockFetcher_GetBlockRange(t *testing.T) {
 	t.Parallel()
 
 	config := headtracker.NewBlockFetcherConfigWithDefaults()
@@ -28,29 +24,43 @@ func TestBlockFetcher_Start(t *testing.T) {
 		logger := store.Config.CreateProductionLogger()
 
 		ethClient := new(mocks.Client)
-		blockFetcher := headtracker.NewBlockFetcher(ethClient, config, logger)
 
-		ethClient.On("BatchCallContext", mock.Anything, mock.MatchedBy(func(b []rpc.BatchElem) bool {
-			return len(b) == 2 &&
-				b[0].Method == "eth_getBlockByNumber" && b[0].Args[0] == "0x29" && b[0].Args[1] == true &&
-				b[1].Method == "eth_getBlockByNumber" && b[1].Args[0] == "0x2a" && b[1].Args[1] == true
-		})).Return(nil).Run(func(args mock.Arguments) {
-			elems := args.Get(1).([]rpc.BatchElem)
-			elems[0].Result = &headtracker.Block{
-				Number: 42,
-				Hash:   utils.NewHash(),
-			}
-			elems[1].Result = &headtracker.Block{
-				Number: 41,
-				Hash:   utils.NewHash(),
-			}
-		})
+		block40 := cltest.HtBlock(40, common.Hash{})
+		block41 := cltest.HtBlock(41, block40.Hash)
+		block42 := cltest.HtBlock(42, block41.Hash)
+		//h := cltest.HeadFromHtBlock(&block42)
+
+		blockClient := NewFakeBlockEthClient([]headtracker.Block{block40, block41, block42})
+
+		blockFetcher := headtracker.NewBlockFetcher(ethClient, config, logger, blockClient)
+
+		//ethClient.On("BatchCallContext", mock.Anything, mock.MatchedBy(func(b []rpc.BatchElem) bool {
+		//	return len(b) == 2 &&
+		//		b[0].Method == "eth_getBlockByNumber" && b[0].Args[0] == "0x29" && b[0].Args[1] == true &&
+		//		b[1].Method == "eth_getBlockByNumber" && b[1].Args[0] == "0x2a" && b[1].Args[1] == true
+		//})).Return(nil).Run(func(args mock.Arguments) {
+		//	elems := args.Get(1).([]rpc.BatchElem)
+		//	elems[0].Result = &headtracker.Block{
+		//		Number: 42,
+		//		Hash:   utils.NewHash(),
+		//	}
+		//	elems[1].Result = &headtracker.Block{
+		//		Number: 41,
+		//		Hash:   utils.NewHash(),
+		//	}
+		//})
 
 		blockRange, err := blockFetcher.BlockRange(context.Background(), 41, 42)
 		require.NoError(t, err)
 
 		assert.Len(t, blockRange, 2)
 		assert.Len(t, blockFetcher.BlockCache(), 2)
+
+		assert.Equal(t, int64(41), blockRange[0].Number)
+		assert.Equal(t, int64(42), blockRange[1].Number)
+
+		assert.Equal(t, block41.Hash, blockRange[0].Hash)
+		assert.Equal(t, block42.Hash, blockRange[1].Hash)
 
 		ethClient.AssertExpectations(t)
 	})
@@ -63,42 +73,82 @@ func TestBlockFetcher_ConstructsChain(t *testing.T) {
 	defer cleanup()
 	logger := store.Config.CreateProductionLogger()
 
+	block40 := cltest.HtBlock(40, common.Hash{})
+	block41 := cltest.HtBlock(41, block40.Hash)
+	block42 := cltest.HtBlock(42, block41.Hash)
+	h := cltest.HeadFromHtBlock(&block42)
+
+	blockClient := NewFakeBlockEthClient([]headtracker.Block{block40, block41, block42})
 	ethClient := new(mocks.Client)
-	blockFetcher := headtracker.NewBlockFetcher(ethClient, config, logger)
-
-	block40 := cltest.Block(40, common.Hash{})
-	block41 := cltest.Block(41, block40.Hash())
-	block42 := cltest.Block(42, block41.Hash())
-	h := cltest.HeadFromBlock(block42)
-
-	setupMockCalls(ethClient, []*types.Block{block40, block41, block42})
+	blockFetcher := headtracker.NewBlockFetcher(ethClient, config, logger, blockClient)
 
 	head, err := blockFetcher.Chain(context.Background(), *h)
 	require.NoError(t, err)
 	assert.Equal(t, 3, int(head.ChainLength()))
 }
 
-func setupMockCalls(ethClient *mocks.Client, blocks []*types.Block) {
-	for _, b := range blocks {
-		block := b
-		ethClient.On("FastBlockByHash", mock.Anything, mock.MatchedBy(func(hash common.Hash) bool {
-			return hash == block.Hash()
-		})).Return(block, nil)
+//func setupMockCalls(ethClient *mocks.Client, blocks []headtracker.Block) {
+//	for _, b := range blocks {
+//		block := b
+//		ethClient.On("FastBlockByHash", mock.Anything, mock.MatchedBy(func(hash common.Hash) bool {
+//			return hash == block.Hash
+//		})).Return(block, nil)
+//
+//		ethClient.On("BlockByNumber", mock.Anything, mock.MatchedBy(func(number *big.Int) bool {
+//			return number.Int64() == block.Number
+//		})).Return(block, nil)
+//
+//		ethClient.On("BatchCallContext", mock.Anything, mock.MatchedBy(func(b []rpc.BatchElem) bool {
+//			return true // len(b) == 1 &&
+//			//	b[0].Method == "eth_getBlockByNumber" && b[0].Args[0] == headtracker.Int64ToHex(43) && b[0].Args[1] == true && reflect.TypeOf(b[0].Result) == reflect.TypeOf(&headtracker.Block{})
+//		})).Return(nil).Run(func(args mock.Arguments) {
+//			elems := args.Get(1).([]rpc.BatchElem)
+//			elems[0].Result = &blocks[0]
+//		})
+//
+//		//ethClient.On("BlockByNumber", mock.Anything, mock.MatchedBy(func(number *big.Int) bool {
+//		//	return number.Int64() == block.Number().Int64()
+//		//})).Return(block, nil)
+//	}
+//}
 
-		ethClient.On("BlockByNumber", mock.Anything, mock.MatchedBy(func(number *big.Int) bool {
-			return number.Int64() == block.Number().Int64()
-		})).Return(block, nil)
+type FakeBlockEthClient struct {
+	blocks []headtracker.Block
+}
 
-		ethClient.On("BatchCallContext", mock.Anything, mock.MatchedBy(func(b []rpc.BatchElem) bool {
-			return true // len(b) == 1 &&
-			//	b[0].Method == "eth_getBlockByNumber" && b[0].Args[0] == headtracker.Int64ToHex(43) && b[0].Args[1] == true && reflect.TypeOf(b[0].Result) == reflect.TypeOf(&headtracker.Block{})
-		})).Return(nil).Run(func(args mock.Arguments) {
-			elems := args.Get(1).([]rpc.BatchElem)
-			elems[0].Result = &blocks[0]
-		})
-
-		//ethClient.On("BlockByNumber", mock.Anything, mock.MatchedBy(func(number *big.Int) bool {
-		//	return number.Int64() == block.Number().Int64()
-		//})).Return(block, nil)
+func NewFakeBlockEthClient(blocks []headtracker.Block) *FakeBlockEthClient {
+	return &FakeBlockEthClient{
+		blocks: blocks,
 	}
+}
+
+func (bc *FakeBlockEthClient) BlockByNumber(ctx context.Context, number int64) (*headtracker.Block, error) {
+	for _, block := range bc.blocks {
+		if block.Number == number {
+			return &block, nil
+		}
+	}
+	return nil, errors.Errorf("not found: %v", number)
+}
+
+func (bc *FakeBlockEthClient) FastBlockByHash(ctx context.Context, hash common.Hash) (*headtracker.Block, error) {
+	for _, block := range bc.blocks {
+		if block.Hash == hash {
+			return &block, nil
+		}
+	}
+	return nil, errors.Errorf("not found: %v", hash)
+}
+
+func (bc *FakeBlockEthClient) FetchBlocksByNumbers(ctx context.Context, numbers []int64) (map[int64]headtracker.Block, error) {
+
+	mapp := make(map[int64]headtracker.Block, 0)
+	for _, block := range bc.blocks {
+		for _, number := range numbers {
+			if block.Number == number {
+				mapp[number] = block
+			}
+		}
+	}
+	return mapp, nil
 }

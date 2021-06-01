@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/smartcontractkit/chainlink/core/services/keystore/p2pkey"
 	"github.com/smartcontractkit/chainlink/core/services/signatures/secp256k1"
 
 	"github.com/lib/pq"
@@ -102,7 +103,7 @@ func (pr *PipelineRun) SetID(value string) error {
 type OffchainReportingOracleSpec struct {
 	ID                                     int32                `toml:"-" gorm:"primary_key"`
 	ContractAddress                        models.EIP55Address  `toml:"contractAddress"`
-	P2PPeerID                              *models.PeerID       `toml:"p2pPeerID" gorm:"column:p2p_peer_id;default:null"`
+	P2PPeerID                              *p2pkey.PeerID       `toml:"p2pPeerID" gorm:"column:p2p_peer_id;default:null"`
 	P2PBootstrapPeers                      pq.StringArray       `toml:"p2pBootstrapPeers" gorm:"column:p2p_bootstrap_peers;type:text[]"`
 	IsBootstrapPeer                        bool                 `toml:"isBootstrapPeer"`
 	EncryptedOCRKeyBundleID                *models.Sha256Hash   `toml:"keyBundleID" gorm:"type:bytea"`

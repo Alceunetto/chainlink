@@ -27,6 +27,7 @@ import (
 	"github.com/smartcontractkit/chainlink/core/services"
 	"github.com/smartcontractkit/chainlink/core/services/gasupdater"
 	"github.com/smartcontractkit/chainlink/core/services/job"
+	"github.com/smartcontractkit/chainlink/core/services/keystore/p2pkey"
 	"github.com/smartcontractkit/chainlink/core/static"
 
 	p2ppeer "github.com/libp2p/go-libp2p-core/peer"
@@ -106,8 +107,8 @@ const (
 )
 
 var (
-	DefaultP2PPeerID     models.PeerID
-	NonExistentP2PPeerID models.PeerID
+	DefaultP2PPeerID     p2pkey.PeerID
+	NonExistentP2PPeerID p2pkey.PeerID
 	// DefaultOCRKeyBundleIDSha256 is the ID of the fixture ocr key bundle
 	DefaultOCRKeyBundleIDSha256 models.Sha256Hash
 	FluxAggAddress              = common.HexToAddress("0x3cCad4715152693fE3BC4460591e3D3Fbd071b42")
@@ -152,12 +153,12 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	DefaultP2PPeerID = models.PeerID(defaultP2PPeerID)
+	DefaultP2PPeerID = p2pkey.PeerID(defaultP2PPeerID)
 	nonExistentP2PPeerID, err := p2ppeer.Decode(NonExistentPeerID)
 	if err != nil {
 		panic(err)
 	}
-	NonExistentP2PPeerID = models.PeerID(nonExistentP2PPeerID)
+	NonExistentP2PPeerID = p2pkey.PeerID(nonExistentP2PPeerID)
 	DefaultOCRKeyBundleIDSha256, err = models.Sha256HashFromHex(DefaultOCRKeyBundleID)
 	if err != nil {
 		panic(err)

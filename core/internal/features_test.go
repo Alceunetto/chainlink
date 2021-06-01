@@ -33,7 +33,7 @@ import (
 
 	"github.com/onsi/gomega"
 
-	"github.com/smartcontractkit/chainlink/core/store/models/ocrkey"
+	"github.com/smartcontractkit/chainlink/core/services/keystore/ocrkey"
 	"github.com/smartcontractkit/libocr/gethwrappers/offchainaggregator"
 	"github.com/smartcontractkit/libocr/gethwrappers/testoffchainaggregator"
 	"github.com/smartcontractkit/libocr/offchainreporting/confighelper"

@@ -3,6 +3,7 @@ package presenters
 import (
 	"time"
 
+	"github.com/smartcontractkit/chainlink/core/services/keystore/p2pkey"
 	"github.com/smartcontractkit/chainlink/core/services/signatures/secp256k1"
 
 	"github.com/lib/pq"
@@ -88,7 +89,7 @@ func NewFluxMonitorSpec(spec *job.FluxMonitorSpec) *FluxMonitorSpec {
 // OffChainReportingSpec defines the spec details of a OffChainReporting Job
 type OffChainReportingSpec struct {
 	ContractAddress                        models.EIP55Address  `json:"contractAddress"`
-	P2PPeerID                              *models.PeerID       `json:"p2pPeerID"`
+	P2PPeerID                              *p2pkey.PeerID       `json:"p2pPeerID"`
 	P2PBootstrapPeers                      pq.StringArray       `json:"p2pBootstrapPeers"`
 	IsBootstrapPeer                        bool                 `json:"isBootstrapPeer"`
 	EncryptedOCRKeyBundleID                *models.Sha256Hash   `json:"keyBundleID"`

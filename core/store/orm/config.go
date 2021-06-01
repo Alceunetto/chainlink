@@ -744,7 +744,7 @@ func (c Config) EthNonceAutoSync() bool {
 func (c Config) EthGasLimitDefault() uint64 {
 	ethGasLimitDefault := chainSpecificConfig(c).EthGasLimitDefault
 	if c.viper.IsSet(EnvVarName("EthGasLimitDefault")) || ethGasLimitDefault == 0 {
-		return c.getWithFallback("EthGasLimitDefault", parseUint64).(uint64)
+		return c.viper.GetUint64(EnvVarName("EthGasLimitDefault"))
 	}
 	return ethGasLimitDefault
 }

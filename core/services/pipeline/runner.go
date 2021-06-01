@@ -190,6 +190,7 @@ func (r *runner) panickedRunResults(spec Spec) (Run, []TaskRunResult, error) {
 }
 
 type scheduler struct {
+	fail         context.Context
 	pipeline     *Pipeline
 	dependencies map[int64]uint
 	input        interface{}
@@ -199,10 +200,10 @@ type scheduler struct {
 	results map[int64]TaskRunResult
 
 	taskCh   chan *memoryTaskRun
-	resultCh chan *TaskRunResult
+	resultCh chan TaskRunResult
 }
 
-func newScheduler(p *Pipeline, i interface{}) *scheduler {
+func newScheduler(fail context.Context, p *Pipeline, i interface{}) *scheduler {
 	dependencies := make(map[int64]uint, len(p.Tasks))
 	var roots []Task
 
@@ -216,6 +217,7 @@ func newScheduler(p *Pipeline, i interface{}) *scheduler {
 		}
 	}
 	s := &scheduler{
+		fail:         fail,
 		pipeline:     p,
 		dependencies: dependencies,
 		input:        i,
@@ -223,7 +225,7 @@ func newScheduler(p *Pipeline, i interface{}) *scheduler {
 
 		// taskCh should never block
 		taskCh:   make(chan *memoryTaskRun, len(dependencies)),
-		resultCh: make(chan *TaskRunResult),
+		resultCh: make(chan TaskRunResult),
 	}
 
 	for _, task := range roots {
@@ -241,44 +243,46 @@ func newScheduler(p *Pipeline, i interface{}) *scheduler {
 }
 
 func (s *scheduler) run() {
-	for result := range s.resultCh {
-		s.waiting--
+	for {
+		select {
+		case <-s.fail.Done():
+			// execution panicked, drain remaining goroutines and exit
+			s.waiting--
 
-		if result == nil {
-			// we are done
-			if s.waiting == 0 {
-				close(s.taskCh)
-				break
-			} else {
-				continue
+			// TODO: what if multiple goroutines panic?
+
+			for s.waiting > 0 {
+				<-s.resultCh
 			}
-		}
 
-		// mark job as complete
-		s.results[result.Task.ID()] = *result
+		case result := <-s.resultCh:
+			s.waiting--
 
-		// TODO: immediately cancel other jobs without waiting for them to complete
+			// mark job as complete
+			s.results[result.Task.ID()] = result
 
-		for _, output := range result.Task.Outputs() {
-			id := output.ID()
-			s.dependencies[id]--
+			for _, output := range result.Task.Outputs() {
+				id := output.ID()
+				s.dependencies[id]--
 
-			// if all dependencies are done, schedule task run
-			if s.dependencies[id] == 0 {
-				task := s.pipeline.Tasks[id]
-				run := &memoryTaskRun{task: task}
+				// if all dependencies are done, schedule task run
+				if s.dependencies[id] == 0 {
+					task := s.pipeline.Tasks[id]
+					run := &memoryTaskRun{task: task}
 
-				// fill in the inputs
-				for _, i := range task.Inputs() {
-					run.inputs = append(run.inputs, input{index: int32(i.OutputIndex()), result: s.results[i.ID()].Result})
+					// fill in the inputs
+					for _, i := range task.Inputs() {
+						run.inputs = append(run.inputs, input{index: int32(i.OutputIndex()), result: s.results[i.ID()].Result})
+					}
+
+					s.taskCh <- run
+					s.waiting++
 				}
-
-				s.taskCh <- run
-				s.waiting++
 			}
+
 		}
 
-		// we are done
+		// if we are done, stop execution
 		if s.waiting == 0 {
 			close(s.taskCh)
 			break
@@ -320,7 +324,10 @@ func (r *runner) executeRun(
 		}
 	}
 
-	scheduler := newScheduler(pipeline, pipelineInput)
+	// we want a separate context from the one passed into the pipeline
+	fail, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scheduler := newScheduler(fail, pipeline, pipelineInput)
 
 	// TODO: Test with multiple and single null successor IDs
 	// https://www.pivotaltracker.com/story/show/176557536
@@ -330,7 +337,6 @@ func (r *runner) executeRun(
 		retry bool
 	)
 
-	// TODO: figure out new retry logic
 	for taskRun := range scheduler.taskCh {
 		// execute
 		go func(taskRun *memoryTaskRun) {
@@ -339,9 +345,8 @@ func (r *runner) executeRun(
 					logger.Default.Errorw("goroutine panicked executing run", "panic", err, "stacktrace", string(debug.Stack()))
 					// No mutex needed: if any goroutine panics, we retry the run.
 					retry = true
-					scheduler.resultCh <- nil
+					cancel()
 				}
-				// wg.Done()
 			}()
 			result := r.executeTaskRun(ctx, spec, vars, taskRun, meta, l)
 
@@ -355,8 +360,7 @@ func (r *runner) executeRun(
 			logTaskRunToPrometheus(result, spec)
 
 			// report the result back to the scheduler
-			// TODO: report errors by sending (result, err) here?
-			scheduler.resultCh <- &result
+			scheduler.resultCh <- result
 		}(taskRun)
 	}
 

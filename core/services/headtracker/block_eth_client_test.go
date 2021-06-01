@@ -94,7 +94,7 @@ func TestBlockEthClient_BatchGetBlocks(t *testing.T) {
 	assert.Equal(t, int64(43), blocks[43].Number)
 }
 
-func TestBlockEthClient_BatchReturnsFewerBlcoksOnError(t *testing.T) {
+func TestBlockEthClient_BatchReturnsFewerBlocksOnError(t *testing.T) {
 	store, cleanup := cltest.NewStore(t)
 	defer cleanup()
 	logger := store.Config.CreateProductionLogger()
@@ -117,11 +117,9 @@ func TestBlockEthClient_BatchReturnsFewerBlcoksOnError(t *testing.T) {
 
 	blockClient := headtracker.NewBlockEthClientImpl(ethClient, logger, 2)
 
-	blocks, err := blockClient.FetchBlocksByNumbers(context.Background(), []int64{41, 42, 43})
+	blocks, err := blockClient.FetchBlocksByNumbers(context.Background(), []int64{41, 42})
 	require.NoError(t, err)
 
-	assert.Len(t, blocks, 3)
-	assert.Equal(t, int64(41), blocks[41].Number)
+	assert.Len(t, blocks, 1)
 	assert.Equal(t, int64(42), blocks[42].Number)
-	assert.Equal(t, int64(43), blocks[43].Number)
 }

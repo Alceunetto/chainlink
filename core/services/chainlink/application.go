@@ -179,7 +179,7 @@ func NewApplication(config *orm.Config, ethClient eth.Client, advisoryLocker pos
 
 		logger.Debugw("GasUpdater: dynamic gas updates are enabled", "ethGasPriceDefault", store.Config.EthGasPriceDefault())
 		gasUpdater := gasupdater.NewGasUpdater(blockFetcher, store.Config)
-		headBroadcaster.SubscribeUntilClose(gasUpdater)
+		headBroadcaster.Subscribe(gasUpdater)
 		subservices = append(subservices, gasUpdater)
 	} else {
 		logger.Debugw("GasUpdater: dynamic gas updating is disabled", "ethGasPriceDefault", store.Config.EthGasPriceDefault())
@@ -344,21 +344,21 @@ func NewApplication(config *orm.Config, ethClient eth.Client, advisoryLocker pos
 		subservices: subservices,
 	}
 
-	headBroadcaster.SubscribeUntilClose(logBroadcaster)
-	headBroadcaster.SubscribeUntilClose(promReporter)
-	headBroadcaster.SubscribeUntilClose(ethConfirmer)
-	headBroadcaster.SubscribeUntilClose(jobSubscriber)
-	headBroadcaster.SubscribeUntilClose(balanceMonitor)
+	headBroadcaster.Subscribe(logBroadcaster)
+	headBroadcaster.Subscribe(promReporter)
+	headBroadcaster.Subscribe(ethConfirmer)
+	headBroadcaster.Subscribe(jobSubscriber)
+	headBroadcaster.Subscribe(balanceMonitor)
 
-	headBroadcaster.SubscribeForConnectUntilClose(func() error {
+	headBroadcaster.Subscribe(&httypes.HeadTrackableCallback{OnConnect: func() error {
 		return runManager.ResumeAllPendingConnection()
-	})
+	}})
 
 	for _, onConnectCallback := range onConnectCallbacks {
-		headBroadcaster.SubscribeForConnectUntilClose(func() error {
+		headBroadcaster.Subscribe(&httypes.HeadTrackableCallback{OnConnect: func() error {
 			onConnectCallback(app)
 			return nil
-		})
+		}})
 	}
 	app.HeadTracker = services.NewHeadTracker(headTrackerLogger, store, headBroadcaster, blockFetcher)
 

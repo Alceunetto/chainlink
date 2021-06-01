@@ -357,6 +357,11 @@ func (bf *BlockFetcher) syncLatestHead(ctx context.Context, head models.Head) (m
 		// we don't have the previous block or there was a re-org
 		bf.logger.Debugf("Getting a range of blocks: %v to %v", from, head.Number)
 		blocks, err := bf.GetBlockRange(ctx, from, head.Number)
+
+		if len(blocks) == 0 {
+			logger.Warnf("No blocks returned by range %v to %v", from, head.Number)
+			return head, nil
+		}
 		sort.Slice(blocks, func(i, j int) bool {
 			return blocks[i].Number < blocks[j].Number
 		})

@@ -810,7 +810,7 @@ func createHeadTrackerWithChecker(logger *logger.Logger, store *strpkg.Store, ch
 	bf := new(htmocks.BlockFetcherInterface)
 	bf.On("SyncLatestHead", mock.Anything, mock.Anything).Return(nil)
 
-	hb.SubscribeUntilClose(checker)
+	hb.Subscribe(checker)
 	hb.Start()
 	return &headTrackerUniverse{
 		headTracker:     services.NewHeadTracker(logger, store, hb, bf, cltest.NeverSleeper{}),

@@ -127,17 +127,28 @@ func TestIntegration_HttpRequestWithHeaders(t *testing.T) {
 		Run(func(args mock.Arguments) { chchNewHeads <- args.Get(1).(chan<- *models.Head) }).
 		Return(sub, nil)
 
-	ethClient.On("HeaderByNumber", mock.Anything, mock.AnythingOfType("*big.Int")).Maybe().Return(cltest.Head(inLongestChain), nil)
+	headInLongestChain := cltest.Head(inLongestChain)
+	ethClient.On("HeaderByNumber", mock.Anything, mock.AnythingOfType("*big.Int")).Maybe().Return(headInLongestChain, nil)
 	ethClient.On("Dial", mock.Anything).Return(nil)
 	ethClient.On("ChainID", mock.Anything).Return(config.ChainID(), nil)
 	ethClient.On("PendingNonceAt", mock.Anything, mock.Anything).Maybe().Return(uint64(0), nil)
 	ethClient.On("NonceAt", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(uint64(100), nil)
 	ethClient.On("BalanceAt", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(oneETH.ToInt(), nil)
+
+	block := cltest.Block(int(headInLongestChain.Number), common.Hash{})
+
 	ethClient.On("BatchCallContext", mock.Anything, mock.MatchedBy(func(b []rpc.BatchElem) bool {
 		return len(b) != 1
-	})).Return(nil)
+	})).
+		Return(nil).
+		Run(func(args mock.Arguments) {
+			elems := args.Get(1).([]rpc.BatchElem)
+			block := fromEthBlock(*block)
+			elems[0].Result = &block
+		})
 
-	ethClient.On("FastBlockByHash", mock.Anything, mock.Anything).Maybe().Return(cltest.Block(0, cltest.NewHash()), nil)
+	ethClient.On("FastBlockByHash", mock.Anything, mock.Anything).Maybe().Return(block, nil)
+	ethClient.On("BlockByNumber", mock.Anything, mock.Anything).Maybe().Return(block, nil)
 
 	ethClient.On("SendTransaction", mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
@@ -172,6 +183,15 @@ func TestIntegration_HttpRequestWithHeaders(t *testing.T) {
 	newHeads <- cltest.Head(safe + 1)
 
 	cltest.WaitForJobRunToComplete(t, app.Store, jr)
+}
+
+func fromEthBlock(ethBlock types.Block) headtracker.Block {
+	var block headtracker.Block
+	block.Number = ethBlock.Number().Int64()
+	block.Hash = ethBlock.Hash()
+	block.ParentHash = ethBlock.ParentHash()
+
+	return block
 }
 
 func TestIntegration_RunAt(t *testing.T) {

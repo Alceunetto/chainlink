@@ -36,7 +36,6 @@ type (
 		SetOutputTask(task Task)
 		OutputIndex() int32
 		TaskTimeout() (time.Duration, bool)
-		NumPredecessors() int
 	}
 
 	Config interface {
@@ -260,7 +259,7 @@ var (
 	int32Type  = reflect.TypeOf(int32(0))
 )
 
-func UnmarshalTaskFromMap(taskType TaskType, taskMap interface{}, ID int64, dotID string, config Config, txdb *gorm.DB, txdbMutex *sync.Mutex, numPredecessors int) (_ Task, err error) {
+func UnmarshalTaskFromMap(taskType TaskType, taskMap interface{}, ID int64, dotID string, config Config, txdb *gorm.DB, txdbMutex *sync.Mutex) (_ Task, err error) {
 	defer utils.WrapIfError(&err, "UnmarshalTaskFromMap")
 
 	switch taskMap.(type) {
@@ -274,21 +273,21 @@ func UnmarshalTaskFromMap(taskType TaskType, taskMap interface{}, ID int64, dotI
 	var task Task
 	switch taskType {
 	case TaskTypePanic:
-		task = &PanicTask{BaseTask: BaseTask{id: ID, dotID: dotID, numPredecessors: numPredecessors}}
+		task = &PanicTask{BaseTask: BaseTask{id: ID, dotID: dotID}}
 	case TaskTypeHTTP:
-		task = &HTTPTask{config: config, BaseTask: BaseTask{id: ID, dotID: dotID, numPredecessors: numPredecessors}}
+		task = &HTTPTask{config: config, BaseTask: BaseTask{id: ID, dotID: dotID}}
 	case TaskTypeBridge:
-		task = &BridgeTask{config: config, safeTx: SafeTx{txdb, txdbMutex}, BaseTask: BaseTask{id: ID, dotID: dotID, numPredecessors: numPredecessors}}
+		task = &BridgeTask{config: config, safeTx: SafeTx{txdb, txdbMutex}, BaseTask: BaseTask{id: ID, dotID: dotID}}
 	case TaskTypeMedian:
-		task = &MedianTask{BaseTask: BaseTask{id: ID, dotID: dotID, numPredecessors: numPredecessors}}
+		task = &MedianTask{BaseTask: BaseTask{id: ID, dotID: dotID}}
 	case TaskTypeAny:
-		task = &AnyTask{BaseTask: BaseTask{id: ID, dotID: dotID, numPredecessors: numPredecessors}}
+		task = &AnyTask{BaseTask: BaseTask{id: ID, dotID: dotID}}
 	case TaskTypeJSONParse:
-		task = &JSONParseTask{BaseTask: BaseTask{id: ID, dotID: dotID, numPredecessors: numPredecessors}}
+		task = &JSONParseTask{BaseTask: BaseTask{id: ID, dotID: dotID}}
 	case TaskTypeMultiply:
-		task = &MultiplyTask{BaseTask: BaseTask{id: ID, dotID: dotID, numPredecessors: numPredecessors}}
+		task = &MultiplyTask{BaseTask: BaseTask{id: ID, dotID: dotID}}
 	case TaskTypeVRF:
-		task = &VRFTask{BaseTask: BaseTask{id: ID, dotID: dotID, numPredecessors: numPredecessors}}
+		task = &VRFTask{BaseTask: BaseTask{id: ID, dotID: dotID}}
 	default:
 		return nil, errors.Errorf(`unknown task type: "%v"`, taskType)
 	}

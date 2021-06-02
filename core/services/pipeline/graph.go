@@ -107,8 +107,12 @@ type Pipeline struct {
 }
 
 func (p *Pipeline) UnmarshalText(bs []byte) (err error) {
-	p, err = Parse(bs)
-	return err
+	parsed, err := Parse(bs)
+	if err != nil {
+		return err
+	}
+	*p = *parsed
+	return nil
 }
 func (p *Pipeline) MinTimeout() (time.Duration, bool, error) {
 	var minTimeout time.Duration = 1<<63 - 1

@@ -6,7 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"gonum.org/v1/gonum/graph"
-	// "gonum.org/v1/gonum/graph/encoding/dot"
 
 	"github.com/smartcontractkit/chainlink/core/services/pipeline"
 )

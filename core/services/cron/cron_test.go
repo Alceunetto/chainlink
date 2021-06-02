@@ -32,7 +32,6 @@ func TestCronV2Pipeline(t *testing.T) {
 		Type:          job.Cron,
 		SchemaVersion: 1,
 		CronSpec:      &job.CronSpec{CronSchedule: "@every 1s"},
-		Pipeline:      *pipeline.NewTaskDAG(),
 		PipelineSpec:  &pipeline.Spec{},
 	}
 	delegate := cron.NewDelegate(runner)
@@ -56,7 +55,6 @@ func TestCronV2Schedule(t *testing.T) {
 		Type:          job.Cron,
 		SchemaVersion: 1,
 		CronSpec:      &job.CronSpec{CronSchedule: "@every 1s"},
-		Pipeline:      *pipeline.NewTaskDAG(),
 		PipelineSpec:  &pipeline.Spec{},
 	}
 	runner := new(pipelinemocks.Runner)

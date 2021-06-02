@@ -11,7 +11,6 @@ import (
 
 	"gopkg.in/guregu/null.v4"
 
-	"github.com/smartcontractkit/chainlink/core/services/pipeline"
 	"github.com/smartcontractkit/chainlink/core/store/models"
 	"gorm.io/gorm"
 
@@ -139,9 +138,7 @@ func makeOCRJobSpec(t *testing.T, transmitterAddress common.Address) *job.Job {
 	ocrKeyID := cltest.DefaultOCRKeyBundleID
 	jobSpecText := fmt.Sprintf(ocrJobSpecText, cltest.NewAddress().Hex(), peerID.String(), ocrKeyID, transmitterAddress.Hex())
 
-	dbSpec := job.Job{
-		Pipeline: *pipeline.NewTaskDAG(),
-	}
+	dbSpec := job.Job{}
 	err := toml.Unmarshal([]byte(jobSpecText), &dbSpec)
 	require.NoError(t, err)
 	var ocrspec job.OffchainReportingOracleSpec
@@ -183,7 +180,6 @@ func makeMinimalHTTPOracleSpec(t *testing.T, contractAddress, peerID, transmitte
 	}
 	var os = job.Job{
 		Name:          null.NewString("a job", true),
-		Pipeline:      *pipeline.NewTaskDAG(),
 		Type:          job.OffchainReporting,
 		SchemaVersion: 1,
 	}
@@ -226,9 +222,7 @@ func makeSimpleFetchOCRJobSpecWithHTTPURL(t *testing.T, db *gorm.DB, transmitter
 func makeOCRJobSpecFromToml(t *testing.T, db *gorm.DB, jobSpecToml string) *job.Job {
 	t.Helper()
 
-	var jb = job.Job{
-		Pipeline: *pipeline.NewTaskDAG(),
-	}
+	var jb = job.Job{}
 	err := toml.Unmarshal([]byte(jobSpecToml), &jb)
 	require.NoError(t, err)
 	var ocrspec job.OffchainReportingOracleSpec

@@ -190,7 +190,6 @@ func (r *runner) panickedRunResults(spec Spec) (Run, []TaskRunResult, error) {
 }
 
 type scheduler struct {
-	fail         context.Context
 	pipeline     *Pipeline
 	dependencies map[int64]uint
 	input        interface{}
@@ -203,7 +202,7 @@ type scheduler struct {
 	resultCh chan TaskRunResult
 }
 
-func newScheduler(fail context.Context, p *Pipeline, i interface{}) *scheduler {
+func newScheduler(p *Pipeline, i interface{}) *scheduler {
 	dependencies := make(map[int64]uint, len(p.Tasks))
 	var roots []Task
 
@@ -217,7 +216,6 @@ func newScheduler(fail context.Context, p *Pipeline, i interface{}) *scheduler {
 		}
 	}
 	s := &scheduler{
-		fail:         fail,
 		pipeline:     p,
 		dependencies: dependencies,
 		input:        i,
@@ -243,43 +241,29 @@ func newScheduler(fail context.Context, p *Pipeline, i interface{}) *scheduler {
 }
 
 func (s *scheduler) run() {
-	for {
-		select {
-		case <-s.fail.Done():
-			// execution panicked, drain remaining goroutines and exit
-			s.waiting--
+	for result := range s.resultCh {
+		s.waiting--
 
-			// TODO: what if multiple goroutines panic?
+		// mark job as complete
+		s.results[result.Task.ID()] = result
 
-			for s.waiting > 0 {
-				<-s.resultCh
-			}
+		for _, output := range result.Task.Outputs() {
+			id := output.ID()
+			s.dependencies[id]--
 
-		case result := <-s.resultCh:
-			s.waiting--
+			// if all dependencies are done, schedule task run
+			if s.dependencies[id] == 0 {
+				task := s.pipeline.Tasks[id]
+				run := &memoryTaskRun{task: task}
 
-			// mark job as complete
-			s.results[result.Task.ID()] = result
-
-			for _, output := range result.Task.Outputs() {
-				id := output.ID()
-				s.dependencies[id]--
-
-				// if all dependencies are done, schedule task run
-				if s.dependencies[id] == 0 {
-					task := s.pipeline.Tasks[id]
-					run := &memoryTaskRun{task: task}
-
-					// fill in the inputs
-					for _, i := range task.Inputs() {
-						run.inputs = append(run.inputs, input{index: int32(i.OutputIndex()), result: s.results[i.ID()].Result})
-					}
-
-					s.taskCh <- run
-					s.waiting++
+				// fill in the inputs
+				for _, i := range task.Inputs() {
+					run.inputs = append(run.inputs, input{index: int32(i.OutputIndex()), result: s.results[i.ID()].Result})
 				}
-			}
 
+				s.taskCh <- run
+				s.waiting++
+			}
 		}
 
 		// if we are done, stop execution
@@ -288,6 +272,15 @@ func (s *scheduler) run() {
 			break
 		}
 	}
+}
+
+// When a task panics, we catch the panic and wrap it in an error for reporting to the scheduler.
+type panicError struct {
+	v interface{}
+}
+
+func (err panicError) Error() string {
+	return fmt.Sprintf("goroutine panicked when executing run: %v", err.v)
 }
 
 func (r *runner) executeRun(
@@ -324,10 +317,7 @@ func (r *runner) executeRun(
 		}
 	}
 
-	// we want a separate context from the one passed into the pipeline
-	fail, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	scheduler := newScheduler(fail, pipeline, pipelineInput)
+	scheduler := newScheduler(pipeline, pipelineInput)
 
 	// TODO: Test with multiple and single null successor IDs
 	// https://www.pivotaltracker.com/story/show/176557536
@@ -343,9 +333,16 @@ func (r *runner) executeRun(
 			defer func() {
 				if err := recover(); err != nil {
 					logger.Default.Errorw("goroutine panicked executing run", "panic", err, "stacktrace", string(debug.Stack()))
+
 					// No mutex needed: if any goroutine panics, we retry the run.
 					retry = true
-					cancel()
+
+					scheduler.resultCh <- TaskRunResult{
+						Task:       taskRun.task,
+						Result:     Result{Error: panicError{err}},
+						FinishedAt: time.Now(),
+						// TODO: CreatedAt
+					}
 				}
 			}()
 			result := r.executeTaskRun(ctx, spec, vars, taskRun, meta, l)
